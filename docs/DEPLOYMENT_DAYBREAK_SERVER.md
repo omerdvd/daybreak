@@ -94,10 +94,62 @@ non-interactive commands over the multiplexed SSH connection can use
   Lynis can't see the Cloud Firewall from inside the host),
   `FILE-6310`/`AUTH-9282`/`BOOT-5122`/`LOGG-2154`/`BANN-7126`/
   `BANN-7130`/`BOOT-5264`/`TOOL-5002` (not worth retrofitting on a
-  single-admin cloud VM), `HRDN-7230` (rkhunter — left undecided,
-  same RAM-constraint reasoning as the ntfy box). **AIDE was
-  explicitly skipped** for this box (unlike ntfy) — lower value here
-  given the narrower attack surface (no public listener at all).
+  single-admin cloud VM), `HRDN-7230` (rkhunter).
+- **rkhunter: decided against, permanently, not just deferred.**
+  Revisited later and made a final call rather than leaving it
+  perpetually "undecided" like the ntfy box: the marginal value doesn't
+  justify the resource cost (CPU/RAM on a 1-vCPU/~1GB Nanode) or the
+  ongoing false-positive-tuning burden, given this box already has zero
+  public attack surface (Cloud Firewall drops everything), key+TOTP SSH,
+  fail2ban, and AIDE (below) for file-integrity detection — which covers
+  "did something change unexpectedly" with better signal-to-noise and no
+  separate signature-database-freshness dependency to maintain.
+- **AIDE**: initially skipped ("lower value given the narrower attack
+  surface"), later installed anyway once actually weighed against
+  rkhunter as the better-value alternative. `/etc/aide/aide.conf.d/
+  70_local_excludes.conf` (cache/log/spool/tmp dirs, `/var/lib/mysql`,
+  `/srv/daybreak/storage`), notify script
+  `/usr/local/bin/daybreak-aide-notify.sh` (same
+  known-benign-path-filtering pattern as ntfy's own `aide-notify.sh`),
+  scheduled via cron (the one established exception to "systemd timer,
+  not cron" — matches ntfy's own AIDE convention), `20 4 * * *` — after
+  the 04:00 backup, offset from ntfy's own 04:15 slot.
+
+  **Auto-advances its own baseline on every run** (`aide --update`, not
+  `--check`) — a deliberate design choice for a live, actively-developed
+  app server: this box's own code legitimately changes whenever new code
+  gets deployed here, so a fixed original-install baseline would
+  re-alert on the same expected diff every day forever, which is exactly
+  what makes people stop reading these alerts. Reports what changed
+  *since the last run* (still real signal, still alerted), then the
+  baseline advances so tomorrow only shows genuinely new changes. This
+  trades "catch a slow change that later reverts" for "stay usable on a
+  system that legitimately changes" — the right call here, not
+  necessarily the right default for every AIDE deployment.
+
+  **Two real bugs hit and fixed while building this, not just "it
+  works":**
+  1. First version used `aide --check`, which is comparison-only and
+     never writes a new database at all — only `--init`/`--update` do.
+     The baseline-advance logic was checking for a file (`aide.db.new`)
+     that `--check` never produces, silently leaving the baseline
+     permanently stuck at its original `--init` state. Fixed by
+     switching to `aide --update` ("check and update the database
+     non-interactively").
+  2. The baseline-move step was gated behind "only if a real diff was
+     found and reported" — but `--update` writes a fresh database on
+     *every* run regardless of whether anything changed, so a clean run
+     left a stale, never-moved `aide.db.new` sitting on disk. Fixed by
+     making the move unconditional (still safely guarded by `-f`, just
+     no longer nested inside the alert-sent branch).
+
+  Verified live end-to-end, not just "the script ran": baseline
+  initialized (real ~3m47s CPU cost on this box's single vCPU — the
+  same class of cost that ruled out rkhunter), a genuine file change
+  (a test marker file, added then removed) correctly triggered two real
+  pushes to the `security` topic, and confirmed via direct file
+  timestamps that the baseline actually advances on every run (clean or
+  not) rather than trusting the exit code alone.
 - `/etc/sysctl.d/99-hardening.conf`: martian logging, redirect/source-
   route rejection (v4+v6), SYN cookies, `kptr_restrict`,
   `dmesg_restrict`, `unprivileged_bpf_disabled`, `bpf_jit_harden`.
@@ -137,7 +189,14 @@ non-interactive commands over the multiplexed SSH connection can use
   adapter's rate limit from 60 to 5000 req/hr — verified both directly
   via `/rate_limit` and that `GitHubAdvisoryAdapter` actually sends it
   as an `Authorization: Bearer` header, not just that a single fetch
-  happened to succeed either way).
+  happened to succeed either way). `SMTP_HOST` stays blank —
+  **decided, permanently, not left open**: no local MTA is installed,
+  so `MailService` genuinely can't send mail as configured (not just
+  degraded), which blocks registration-email-verification/password-
+  reset-via-email/admin-notify-on-signup. None of that matters for this
+  deployment (single admin, no self-service registration, password
+  resets handled directly via SQL/`CredentialVault` if ever needed) —
+  not worth standing up a mail relay for zero real usage.
 - Apache bound **only** to the Tailscale interface IP
   (`Listen 100.71.128.39:80`/`443` in `ports.conf`, default site
   disabled) — belt-and-suspenders on top of the Cloud Firewall; even a
