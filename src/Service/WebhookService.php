@@ -321,10 +321,26 @@ final class WebhookService
         $cleanTitle = $this->stripCategoryTag($item->title);
         $title      = $this->sanitizeHeaderValue(mb_substr($cleanTitle, 0, 150));
         $summary    = $item->summary !== null ? trim($item->summary) : '';
-        $body       = $summary !== '' ? mb_substr($summary, 0, 1000) : $cleanTitle;
-        if ($sourceName !== '') {
-            $body .= "\n\n— " . $sourceName;
+        $content    = $summary !== '' ? mb_substr($summary, 0, 700) : $cleanTitle;
+
+        // CVSS isn't a structured field — NVD and GitHub Advisory embed it as
+        // text in the summary ("CRITICAL (9.8) — ...", "CVSS 9.8 · ..."), so
+        // pull it out for a dedicated line when present. Sources that don't
+        // provide it (CISA KEV, plain RSS, ...) simply have no line added.
+        $cvssLine = $this->extractCvssLine($summary !== '' ? $summary : $cleanTitle);
+
+        $bodyParts = [];
+        if ($cvssLine !== null) {
+            $bodyParts[] = $cvssLine;
         }
+        $bodyParts[] = $content;
+        if ($sourceName !== '') {
+            $bodyParts[] = '— ' . $sourceName;
+        }
+        // Visible fallback link — Click (below) opens it on tap, but this
+        // survives contexts where that doesn't fire (e.g. viewing history).
+        $bodyParts[] = $item->url;
+        $body = implode("\n\n", $bodyParts);
 
         $headers = [
             'Title: ' . $title,
@@ -354,6 +370,23 @@ final class WebhookService
     private function stripCategoryTag(string $title): string
     {
         return (string) preg_replace('/^\[[a-z0-9 _-]+\]\s*/i', '', $title, 1);
+    }
+
+    /**
+     * Extracts a CVSS score for the push-notification body, if the text
+     * contains one in either shape this app's adapters produce:
+     *   - NvdAdapter:            "CRITICAL (9.8) — description"
+     *   - GitHubAdvisoryAdapter: "CVSS 9.8" (among other summary parts)
+     * Returns null (no line added) when neither pattern matches.
+     */
+    private function extractCvssLine(string $text): ?string
+    {
+        if (preg_match('/CVSS\s+(\d+(?:\.\d+)?)/i', $text, $m)
+            || preg_match('/\b(?:CRITICAL|HIGH|MEDIUM|LOW)\s*\(\s*(\d+(?:\.\d+)?)\s*\)/i', $text, $m)
+        ) {
+            return '🎯 CVSS ' . $m[1];
+        }
+        return null;
     }
 
     /** Attempt one delivery and log the result to webhook_log. */

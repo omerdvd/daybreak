@@ -342,6 +342,46 @@ final class WebhookServiceTest extends TestCase
         $this->assertTrue(in_array('Title: CRITICAL: RCE in widely used library', $payload['headers'], true));
     }
 
+    public function testNtfyPayloadBodyIncludesVisibleArticleLink(): void
+    {
+        $item = $this->item('Advisory', 'Some details.');
+        $payload = $this->callNtfyPayload($item, '', false);
+
+        $this->assertStringContains('https://example.test/article', $payload['body']);
+    }
+
+    public function testNtfyPayloadExtractsCvssFromNvdStyleSummary(): void
+    {
+        $item = new NormalizedItem(
+            guid: 'g-nvd', title: 'CVE-2025-1234',
+            url: 'https://example.test/a',
+            summary: 'CRITICAL (9.8) — Remote code execution in widget parser.',
+        );
+        $payload = $this->callNtfyPayload($item, '', true);
+
+        $this->assertStringContains('CVSS 9.8', $payload['body']);
+    }
+
+    public function testNtfyPayloadExtractsCvssFromGithubAdvisoryStyleSummary(): void
+    {
+        $item = new NormalizedItem(
+            guid: 'g-gh', title: 'GHSA-xxxx-yyyy-zzzz',
+            url: 'https://example.test/a',
+            summary: 'CVE-2025-5678 · CVSS 7.5 · Affects widget-lib < 2.0',
+        );
+        $payload = $this->callNtfyPayload($item, '', false);
+
+        $this->assertStringContains('CVSS 7.5', $payload['body']);
+    }
+
+    public function testNtfyPayloadOmitsCvssLineWhenNotPresent(): void
+    {
+        $item = $this->item('CISA KEV: some vendor product', 'Added to the known-exploited-vulnerabilities catalog.');
+        $payload = $this->callNtfyPayload($item, '', true);
+
+        $this->assertFalse(str_contains($payload['body'], 'CVSS'));
+    }
+
     public function testNtfyPayloadSanitizesCrlfInjectionFromTitleAndUrl(): void
     {
         $item = new NormalizedItem(
