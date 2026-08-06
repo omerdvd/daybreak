@@ -255,14 +255,52 @@ following presentation tweaks were added after real-world testing:
   `critical` category, `default` otherwise. Tag: 🚨 (`rotating_light`)
   vs 📰 (`newspaper`).
 
+## Backups
+
+`/root/bin/daybreak-backup.sh`, run via `daybreak-backup.timer`
+(systemd oneshot, daily `04:00 Israel time`, per the standing
+"systemd timer, not cron" convention) — same shape as
+`mc-backup.sh`/`ntfy-backup.sh`:
+
+- `mysqldump --single-transaction --quick` (not table-locking — the
+  `daybreak_app` DB user has no `LOCK TABLES` grant, and this is the
+  standard non-blocking approach for an all-InnoDB schema anyway) +
+  a tarball of `config/.env` and this box's own scripts/units.
+- GPG-encrypted to the existing shared public key
+  (`A0AA01041D2C1467CBC9CC6751A6F94709393AB6`, imported from `ntfy`,
+  ultimate trust — private key never touches this box, same as
+  everywhere else).
+- Uploaded via the **same rclone `Google-Drive:` remote/OAuth token
+  already authorized on `ntfy`** — copied server-to-server (GPG public
+  key + rclone config) rather than a fresh consent flow, since it's
+  the same Google account and refresh tokens work fine used from
+  multiple hosts simultaneously.
+- MD5-verified post-upload (`rclone md5sum`, not `rclone check` — same
+  single-file-path bug noted on the other boxes), 14-day remote
+  retention (`rclone delete --min-age 14d`).
+- Status recorded to `/var/lib/daybreak-backup-status`
+  (`STATUS|timestamp|size|duration`, same shape as the other boxes).
+- **Failure-only** ntfy alert, to the existing `backups` topic (the
+  `daybreak-bot` token was granted write access there too, alongside
+  its `daybreak-critical` scope) — verified working via a real
+  failure hit during setup (missing `LOCK TABLES` grant, fixed by
+  switching to `--single-transaction`).
+
+Deliberately **not** wired into a daily digest (the other boxes fold
+backup status into `daily-digest.sh`, catching a silently-stopped timer
+even without an explicit failure) — tracked as a follow-up in
+[omerdvd/daybreak#2](https://github.com/omerdvd/daybreak/issues/2)
+rather than built now, since this is a single-purpose box and a
+digest integration is a bigger lift than felt justified at initial
+setup.
+
 ## Outstanding / not yet done
 
 - [ ] `terms` filter (specific app/software list) — pending from the
       user.
-- [ ] Encrypted backups (DB dump + `config/.env`, GPG + rclone to
-      Google Drive), matching the `mc-backup.sh`/`ntfy-backup.sh`
-      pattern on the other Linode boxes.
 - [ ] Add `daybreak` to `tailscale-mesh-monitor.sh`'s peer list.
 - [ ] A health check confirming the fetch cron is actually succeeding
       (self-healing restart + alert on failure) — flagged during
       planning as the highest-priority reliability gap, not yet built.
+- [ ] Backup success visibility (digest or equivalent) —
+      [omerdvd/daybreak#2](https://github.com/omerdvd/daybreak/issues/2).
