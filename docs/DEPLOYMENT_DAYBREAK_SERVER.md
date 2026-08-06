@@ -351,6 +351,22 @@ following presentation tweaks were added after real-world testing:
   `critical` category, `default` otherwise. Tag: 🚨 (`rotating_light`)
   vs 📰 (`newspaper`).
 
+## Tailscale mesh monitoring
+
+`daybreak` added to `tailscale-mesh-monitor.sh`'s `MONITORED_PEERS`
+(that script lives on and runs from the `ntfy` server, not tracked in
+any git repo — same as the other monitor/backup scripts across the
+homelab, per the standing convention; this section just records the
+decision and where it lives). Same treatment as `minecraft`/`proxmox`
+— reachability pinged every 5 min, escalating "still down" reminders
+(15 min for the first hour, then hourly) to the `communication` topic
+on state change, `high` priority (not `urgent` — that's reserved for
+the exit node, whose failure has full-tunnel blast radius for other
+devices; a single unreachable `daybreak` doesn't). Verified live: peer
+resolves correctly via `.DNSName`, one manual run recorded `up` with
+no false alert (first-run state establishment, same as every other
+monitored peer).
+
 ## Backups
 
 `/root/bin/daybreak-backup.sh`, run via `daybreak-backup.timer`
@@ -394,6 +410,5 @@ setup.
 
 - [ ] `terms` filter (specific app/software list) — pending from the
       user.
-- [ ] Add `daybreak` to `tailscale-mesh-monitor.sh`'s peer list.
 - [ ] Backup success visibility (digest or equivalent) —
       [omerdvd/daybreak#2](https://github.com/omerdvd/daybreak/issues/2).
