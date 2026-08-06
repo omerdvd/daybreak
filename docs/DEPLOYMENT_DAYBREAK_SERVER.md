@@ -217,22 +217,49 @@ the shared-token model chosen over per-person tokens.
 
 ## Current webhook configuration
 
-One row in `user_webhooks` (`id=1`, `format='ntfy'`):
+Two `user_webhooks` rows, both `format='ntfy'`, both currently
+`{"categories":["critical"]}` (no `terms` narrowing yet — see below):
 
-```json
-{"categories": ["critical"]}
-```
+| id | Topic | Access | Purpose |
+|---|---|---|---|
+| 1 | `daybreak-critical` | `daybreak-readers` shared read token | Company topic — will get the `terms` filter once the app/software list arrives |
+| 2 | `daybreak-critical-public` | Anonymous/no-auth read (`ntfy access everyone daybreak-critical-public read-only`) | Public topic — stays unfiltered by design, every Critical/Patch Now article |
 
-Filters to the `Critical / Patch Now` source category only. **The
-`terms` filter (specific applications/products) is not yet set** — the
-app/software list was still pending as of this deployment. Adding it
-is a one-line SQL update to `filter_json`, no code or redeploy needed:
+Both are published to **only** by the `daybreak-bot` write-only token
+(granted write access to both topics) — the public topic's "no auth"
+applies to reading, never to publishing; anonymous write would let
+anyone spoof fake "critical" alerts into it.
+
+**The `terms` filter (specific applications/products) for the company
+topic (id=1) is not yet set** — the app/software list was still
+pending as of this deployment. Adding it is a one-line SQL update to
+`filter_json`, no code or redeploy needed (row 2, the public topic,
+should stay `{"categories":["critical"]}` — no `terms` by design):
 
 ```sql
 UPDATE user_webhooks
 SET filter_json = '{"terms":["App A","App B"],"categories":["critical"]}'
 WHERE id = 1;
 ```
+
+### ntfy publish throttling
+
+Every Critical/Patch Now article now fires two publishes (one per
+topic) instead of one, which doubles pressure on the self-hosted ntfy
+server's rate limit. Investigated and found the limit
+(`visitor-request-limit-burst: 60`, replenished at 1 token/5s) is
+**shared across the whole homelab's ntfy usage**, not per-integration —
+ntfy sits behind Caddy without `behind-proxy` configured, so every
+publisher's traffic is seen as coming from `127.0.0.1`. (Not fixed
+here — a separate, bigger change to the already-hardened ntfy server,
+outside this app's scope; flagged for a future decision.)
+
+`WebhookService` now paces its own ntfy publishes at exactly the
+replenish rate (1 per 5s, `NTFY_MIN_INTERVAL_S`) so daybreak alone can
+never out-consume what's regenerating, leaving the burst allowance
+free for other integrations. This is also the systemic fix for the
+first-run backfill flood noted above (previously just suppressed
+manually, not fixed at the cause).
 
 ## Push notification formatting
 
