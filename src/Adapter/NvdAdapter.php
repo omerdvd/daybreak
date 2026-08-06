@@ -37,18 +37,25 @@ final class NvdAdapter implements SourceAdapter
         // NVD API key is optional but strongly recommended — without it requests are
         // aggressively rate-limited and may return 503 under load.
         // Register free at https://nvd.nist.gov/developers/request-an-api-key
-        $apiKeySuffix = '';
+        //
+        // Sent as an `apiKey` HEADER, not a query parameter — confirmed via direct
+        // testing that NVD/Cloudflare rejects a valid, activated key passed as
+        // ?apiKey=... with a 404 "Invalid parameter: apiKey", while the identical
+        // key as a header succeeds (200). Both the unauthenticated request and the
+        // header-based authenticated request work; only the query-param form is
+        // rejected — looks like a WAF rule against API keys appearing in query
+        // strings/logs, not an actual invalid-key condition.
+        $accept = ['Accept: application/json'];
         $apiKey = \Daybreak\Config::get('NVD_API_KEY');
         if ($apiKey !== null && $apiKey !== '') {
-            $apiKeySuffix = '&apiKey=' . urlencode($apiKey);
+            $accept[] = 'apiKey: ' . $apiKey;
         }
 
         $dateParams = '?pubStartDate=' . urlencode($start) . '&pubEndDate=' . urlencode($end);
-        $accept     = ['Accept: application/json'];
 
         // Step 1: lightweight probe to get totalResults so we can jump to the last page.
         // NVD/Cloudflare is intermittently slow; retry once on transient failure.
-        $probe = $this->fetchWithRetry($fetcher, $base . $dateParams . '&resultsPerPage=1' . $apiKeySuffix, $accept);
+        $probe = $this->fetchWithRetry($fetcher, $base . $dateParams . '&resultsPerPage=1', $accept);
         if ($probe['status'] >= 400) {
             $detail = mb_substr(strip_tags((string) $probe['body']), 0, 200);
             throw new \RuntimeException('NVD probe HTTP ' . $probe['status'] . ($detail !== '' ? ': ' . $detail : ''));
@@ -58,7 +65,7 @@ final class NvdAdapter implements SourceAdapter
 
         // Step 2: fetch the last page (the most recently published CVEs).
         $startIndex = max(0, $total - self::PAGE_SIZE);
-        $url = $base . $dateParams . '&resultsPerPage=' . self::PAGE_SIZE . '&startIndex=' . $startIndex . $apiKeySuffix;
+        $url = $base . $dateParams . '&resultsPerPage=' . self::PAGE_SIZE . '&startIndex=' . $startIndex;
 
         $res  = $this->fetchWithRetry($fetcher, $url, $accept);
         $data = json_decode($res['body'], true);

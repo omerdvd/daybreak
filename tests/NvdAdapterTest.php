@@ -65,6 +65,23 @@ final class NvdAdapterTest extends TestCase
         $this->assertSame('2026-06-10 08:00:00', $result->items[0]->publishedAt?->format('Y-m-d H:i:s'));
         $this->assertSame($probeUrl, $fetcher->calls[0]['url']);
         $this->assertSame($pageUrl, $fetcher->calls[1]['url']);
+
+        // The API key (when configured) must be sent as an `apiKey` header,
+        // never in the URL/query string — NVD's WAF rejects a valid,
+        // activated key passed as ?apiKey=... with a 404, while the
+        // identical key as a header succeeds. Environment-agnostic: passes
+        // whether or not this environment has NVD_API_KEY configured.
+        $configuredKey = \Daybreak\Config::get('NVD_API_KEY');
+        $expectedHeader = ($configuredKey !== null && $configuredKey !== '') ? 'apiKey: ' . $configuredKey : null;
+        foreach ($fetcher->calls as $call) {
+            $this->assertFalse(
+                (bool) array_filter($call['headers'], static fn($h) => str_contains($h, 'apiKey=')),
+                'apiKey must never appear in a query string / URL-shaped header value'
+            );
+            if ($expectedHeader !== null) {
+                $this->assertTrue(in_array($expectedHeader, $call['headers'], true));
+            }
+        }
     }
 
     public function testFetchReturnsEmptyResultForInvalidPayload(): void
@@ -110,19 +127,13 @@ final class NvdAdapterTest extends TestCase
         return '?pubStartDate=' . urlencode($start) . '&pubEndDate=' . urlencode($end);
     }
 
-    private function apiKeySuffix(): string
-    {
-        $key = \Daybreak\Config::get('NVD_API_KEY');
-        return ($key !== null && $key !== '') ? '&apiKey=' . urlencode($key) : '';
-    }
-
     private function nvdProbeUrl(string $baseUrl): string
     {
-        return rtrim($baseUrl, '?&') . $this->nvdDateParams() . '&resultsPerPage=1' . $this->apiKeySuffix();
+        return rtrim($baseUrl, '?&') . $this->nvdDateParams() . '&resultsPerPage=1';
     }
 
     private function nvdPageUrl(string $baseUrl, int $startIndex): string
     {
-        return rtrim($baseUrl, '?&') . $this->nvdDateParams() . '&resultsPerPage=20&startIndex=' . $startIndex . $this->apiKeySuffix();
+        return rtrim($baseUrl, '?&') . $this->nvdDateParams() . '&resultsPerPage=20&startIndex=' . $startIndex;
     }
 }
