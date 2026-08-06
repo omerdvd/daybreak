@@ -88,13 +88,25 @@ non-interactive commands over the multiplexed SSH connection can use
 
 ## Hardening
 
-- **Lynis**: hardening index 60 → 64 after a custom profile
+- **Lynis**: hardening index 60 → 64 at initial setup, → 67 by the time
+  monthly tracking was added (reflects everything hardened in between —
+  unattended-upgrades, fail2ban tuning, AIDE, etc.) — custom profile
   (`/etc/lynis/custom.prf`) with reasoned skips matching the pattern
   already used on the ntfy/Minecraft boxes: `SSH-7408` (false positive —
   Lynis can't see the Cloud Firewall from inside the host),
   `FILE-6310`/`AUTH-9282`/`BOOT-5122`/`LOGG-2154`/`BANN-7126`/
   `BANN-7130`/`BOOT-5264`/`TOOL-5002` (not worth retrofitting on a
   single-admin cloud VM), `HRDN-7230` (rkhunter).
+  **Monthly drift tracking**: `/usr/local/bin/daybreak-lynis-ntfy.sh`
+  (same shape as `minecraft`'s `lynis-ntfy.sh`, adapted to run against
+  this box's own `custom.prf` — using the unfiltered profile would make
+  the tracked score jump around based on the same reasoned skips
+  re-appearing as "failures," not real drift), `daybreak-lynis-ntfy.timer`
+  (systemd, not cron — this one doesn't share AIDE's cron-is-already-
+  established-here exception), 1st of the month at 01:00, posts to
+  `communication`. First real run (used to establish the baseline
+  instead of waiting a month for the first data point) confirmed the
+  67 score above.
 - **rkhunter: decided against, permanently, not just deferred.**
   Revisited later and made a final call rather than leaving it
   perpetually "undecided" like the ntfy box: the marginal value doesn't
