@@ -234,6 +234,54 @@ final class FeedFetcher implements FetchClient
         ];
     }
 
+    public function post(string $url, string $body, array $headers = []): array
+    {
+        $pin = SsrfGuard::assertSafe($url);
+
+        $ch = curl_init($url);
+        $options = [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HEADER         => true,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_TIMEOUT        => self::TIMEOUT_S,
+            CURLOPT_USERAGENT      => $this->ua(),
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_PROTOCOLS      => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $body,
+            CURLOPT_NOPROGRESS     => false,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_PROGRESSFUNCTION => static function ($_ch, $_dlTotal, $dlNow) {
+                return $dlNow > self::MAX_BYTES ? 1 : 0;
+            },
+        ];
+        $resolveEntry = $this->curlResolveEntry($pin);
+        if ($resolveEntry !== null) {
+            $options[CURLOPT_RESOLVE] = $resolveEntry;
+        }
+        curl_setopt_array($ch, $options);
+
+        $raw    = curl_exec($ch);
+        $errno  = curl_errno($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $hdrLen = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        curl_close($ch);
+
+        if ($errno !== 0 || $raw === false) {
+            throw new RuntimeException('post failed: curl errno ' . $errno);
+        }
+
+        return [
+            'status'        => $status,
+            'body'          => substr($raw, $hdrLen),
+            'etag'          => null,
+            'last_modified' => null,
+            'not_modified'  => false,
+        ];
+    }
+
     /**
      * Diagnostic raw fetch — not part of the FetchClient interface, used by the admin debug panel only.
      * Returns HTTP status, raw response headers, body snippet, timing, and the effective UA sent.

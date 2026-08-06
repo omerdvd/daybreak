@@ -10,12 +10,13 @@ use Daybreak\Security\Html;
 use Daybreak\Security\SsrfGuard;
 use Daybreak\Service\AuditLog;
 use Daybreak\Service\AuthService;
+use Daybreak\Service\CredentialVault;
 
 /** User-facing webhook management: list, create, edit, toggle, delete. */
 final class WebhookController
 {
     private const MAX_WEBHOOKS = 10;
-    private const ALLOWED_FORMATS = ['slack', 'discord', 'teams', 'generic'];
+    private const ALLOWED_FORMATS = ['slack', 'discord', 'teams', 'ntfy', 'generic'];
 
     public function showWebhooks(array $args = []): void
     {
@@ -23,7 +24,8 @@ final class WebhookController
         $userId = (int) AuthService::currentUser()['id'];
 
         $webhooks = Database::query(
-            'SELECT id, name, url, format, filter_json, active, created_at
+            'SELECT id, name, url, format, filter_json, active, created_at,
+                    (secret_enc IS NOT NULL) AS has_token
              FROM user_webhooks WHERE user_id = ? ORDER BY created_at ASC',
             [$userId]
         )->fetchAll();
@@ -78,11 +80,12 @@ final class WebhookController
         $this->assertRateLimit($userId);
 
         $filterJson = $this->buildFilterJson($userId);
+        $secretEnc  = $this->buildSecretEnc($format, null);
 
         Database::query(
-            'INSERT INTO user_webhooks (user_id, name, url, format, filter_json)
-             VALUES (?, ?, ?, ?, ?)',
-            [$userId, $name, $url, $format, $filterJson]
+            'INSERT INTO user_webhooks (user_id, name, url, format, filter_json, secret_enc)
+             VALUES (?, ?, ?, ?, ?, ?)',
+            [$userId, $name, $url, $format, $filterJson, $secretEnc]
         );
         AuditLog::write('webhook.create', 'webhook', (string) Database::lastInsertId());
 
@@ -124,9 +127,16 @@ final class WebhookController
             ['name' => $name, 'url' => $url, 'format' => $format] = $this->validateWebhookInput();
             $this->assertRateLimit($userId);
             $filterJson = $this->buildFilterJson($userId);
+
+            $existingSecret = Database::query(
+                'SELECT secret_enc FROM user_webhooks WHERE id = ? AND user_id = ?',
+                [$webhookId, $userId]
+            )->fetchColumn();
+            $secretEnc = $this->buildSecretEnc($format, $existingSecret !== false ? $existingSecret : null);
+
             Database::query(
-                'UPDATE user_webhooks SET name=?, url=?, format=?, filter_json=? WHERE id=? AND user_id=?',
-                [$name, $url, $format, $filterJson, $webhookId, $userId]
+                'UPDATE user_webhooks SET name=?, url=?, format=?, filter_json=?, secret_enc=? WHERE id=? AND user_id=?',
+                [$name, $url, $format, $filterJson, $secretEnc, $webhookId, $userId]
             );
             AuditLog::write('webhook.update', 'webhook', (string) $webhookId);
             $_SESSION['flash'] = 'Webhook updated.';
@@ -190,6 +200,35 @@ final class WebhookController
             header('Location: /settings/webhooks');
             exit;
         }
+    }
+
+    /**
+     * Builds the encrypted secret_enc value for a webhook from $_POST['ntfy_token'].
+     *
+     * - Format isn't 'ntfy': always null (no secret applies to the other formats,
+     *   whose credentials live in the URL itself — clears any stale token on format switch).
+     * - 'ntfy' + blank token field: keeps $existingSecretEnc unchanged (edit form
+     *   never re-displays the token, so a blank submit means "leave it alone").
+     * - 'ntfy' + non-blank token field: encrypts and replaces it.
+     */
+    private function buildSecretEnc(string $format, ?string $existingSecretEnc): ?string
+    {
+        if ($format !== 'ntfy') {
+            return null;
+        }
+
+        $token = trim((string) ($_POST['ntfy_token'] ?? ''));
+        if ($token === '') {
+            return $existingSecretEnc;
+        }
+
+        if (mb_strlen($token) > 300) {
+            $_SESSION['flash_error'] = 'ntfy access token is too long.';
+            header('Location: /settings/webhooks');
+            exit;
+        }
+
+        return CredentialVault::encrypt($token);
     }
 
     /**

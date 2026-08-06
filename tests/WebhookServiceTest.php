@@ -245,4 +245,78 @@ final class WebhookServiceTest extends TestCase
         $this->assertSame('Test Source', $article['source']);
         $this->assertSame('2024-06-01T12:00:00Z', $article['published_at']);
     }
+
+    // ── ntfy ─────────────────────────────────────────────────────────────────
+
+    private function callNtfyPayload(NormalizedItem $item, string $sourceName, bool $urgent, ?string $secretEnc = null): array
+    {
+        $m = new \ReflectionMethod(WebhookService::class, 'ntfyPayload');
+        $m->setAccessible(true);
+        return $m->invoke($this->service, $item, $sourceName, $urgent, $secretEnc);
+    }
+
+    public function testNtfyPayloadStructureDefaultPriority(): void
+    {
+        $item = $this->item('Regular advisory', 'Some details.');
+        $payload = $this->callNtfyPayload($item, 'Test Source', false);
+
+        $this->assertStringContains('Some details.', $payload['body']);
+        $this->assertStringContains('Test Source', $payload['body']);
+        $this->assertTrue(in_array('Title: Regular advisory', $payload['headers'], true));
+        $this->assertTrue(in_array('Priority: default', $payload['headers'], true));
+        $this->assertTrue(in_array('Tags: newspaper', $payload['headers'], true));
+        $this->assertTrue(in_array('Click: https://example.test/article', $payload['headers'], true));
+    }
+
+    public function testNtfyPayloadUrgentPriorityForCritical(): void
+    {
+        $item = $this->item('CRITICAL: RCE in widely used library', 'Patch immediately.');
+        $payload = $this->callNtfyPayload($item, 'CISA KEV', true);
+
+        $this->assertTrue(in_array('Priority: urgent', $payload['headers'], true));
+        $this->assertTrue(in_array('Tags: rotating_light', $payload['headers'], true));
+    }
+
+    public function testNtfyPayloadFallsBackToTitleWhenNoSummary(): void
+    {
+        $item = $this->item('Advisory with no summary');
+        $payload = $this->callNtfyPayload($item, '', false);
+
+        $this->assertStringContains('Advisory with no summary', $payload['body']);
+    }
+
+    public function testNtfyPayloadOmitsAuthHeaderWithoutSecret(): void
+    {
+        $item = $this->item('No secret configured');
+        $payload = $this->callNtfyPayload($item, '', false, null);
+
+        foreach ($payload['headers'] as $h) {
+            $this->assertFalse(str_starts_with($h, 'Authorization:'));
+        }
+    }
+
+    public function testNtfyPayloadIncludesDecryptedAuthHeaderWhenSecretProvided(): void
+    {
+        $encrypted = \Daybreak\Service\CredentialVault::encrypt('tk_test_token_123');
+        $item = $this->item('Protected topic delivery');
+        $payload = $this->callNtfyPayload($item, '', false, $encrypted);
+
+        $this->assertTrue(in_array('Authorization: Bearer tk_test_token_123', $payload['headers'], true));
+    }
+
+    public function testNtfyPayloadSanitizesCrlfInjectionFromTitleAndUrl(): void
+    {
+        $item = new NormalizedItem(
+            guid:    'g-injection',
+            title:   "Evil title\r\nX-Injected: yes",
+            url:     "https://example.test/a\r\nX-Injected: yes",
+            summary: null,
+        );
+        $payload = $this->callNtfyPayload($item, '', false);
+
+        foreach ($payload['headers'] as $h) {
+            $this->assertFalse(str_contains($h, "\r"));
+            $this->assertFalse(str_contains($h, "\n"));
+        }
+    }
 }

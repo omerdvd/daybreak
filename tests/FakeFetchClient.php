@@ -45,4 +45,15 @@ final class FakeFetchClient implements FetchClient
 
         return $this->responses[$url];
     }
+
+    public function post(string $url, string $body, array $headers = []): array
+    {
+        $this->postCalls[] = ['url' => $url, 'body' => $body, 'headers' => $headers];
+
+        if (!array_key_exists($url, $this->responses)) {
+            throw new RuntimeException('No fake response configured for ' . $url);
+        }
+
+        return $this->responses[$url];
+    }
 }

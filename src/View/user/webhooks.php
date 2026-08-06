@@ -16,15 +16,15 @@ $activeSources = $activeSources ?? [];
 $recentLog     = $recentLog     ?? [];
 $editingId     = $editingId     ?? 0;
 
-$formatLabels = ['slack' => 'Slack', 'discord' => 'Discord', 'teams' => 'Microsoft Teams', 'generic' => 'Generic JSON'];
-$formatColors = ['slack' => '#4a154b', 'discord' => '#5865f2', 'teams' => '#6264a7'];
+$formatLabels = ['slack' => 'Slack', 'discord' => 'Discord', 'teams' => 'Microsoft Teams', 'ntfy' => 'ntfy', 'generic' => 'Generic JSON'];
+$formatColors = ['slack' => '#4a154b', 'discord' => '#5865f2', 'teams' => '#6264a7', 'ntfy' => '#556b2f'];
 ?>
 <div class="settings-page">
 
   <section class="settings-section">
     <h2 class="settings-section-title">Webhooks</h2>
     <p class="form-hint u-mb-1">
-      Push new articles to Slack, Discord, or any HTTP endpoint on every cron tick.
+      Push new articles to Slack, Discord, Microsoft Teams, ntfy, or any HTTP endpoint on every cron tick.
       Filters are optional &mdash; leave all blank to receive all new articles.
       When multiple filter types are set, the article must satisfy all of them.
     </p>
@@ -106,6 +106,14 @@ $formatColors = ['slack' => '#4a154b', 'discord' => '#5865f2', 'teams' => '#6264
                 </div>
 
                 <div class="form-group">
+                  <label class="form-label" for="wh_edit_ntfy_token">ntfy access token <span class="label-normal">(optional, ntfy only)</span></label>
+                  <input id="wh_edit_ntfy_token" class="form-input" type="password"
+                    name="ntfy_token" maxlength="300" autocomplete="off"
+                    placeholder="<?= !empty($wh['has_token']) ? 'Token set — leave blank to keep it' : 'tk_… (leave blank for an unprotected topic)' ?>">
+                  <p class="form-hint">Bearer token for a protected ntfy topic. Stored encrypted, never re-displayed.</p>
+                </div>
+
+                <div class="form-group">
                   <label class="form-label" for="wh_edit_terms">Filter: watch terms <span class="label-normal">(optional)</span></label>
                   <input id="wh_edit_terms" class="form-input" type="text"
                     name="filter_terms" maxlength="1600" autocomplete="off"
@@ -178,8 +186,16 @@ $formatColors = ['slack' => '#4a154b', 'discord' => '#5865f2', 'teams' => '#6264
             <option value="slack">Slack (attachment)</option>
             <option value="discord">Discord (embed)</option>
             <option value="teams">Microsoft Teams (adaptive card)</option>
+            <option value="ntfy">ntfy (push notification)</option>
             <option value="generic" selected>Generic JSON</option>
           </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="wh_ntfy_token">ntfy access token <span class="label-normal">(optional, ntfy only)</span></label>
+          <input id="wh_ntfy_token" class="form-input" type="password" name="ntfy_token"
+            maxlength="300" autocomplete="off" placeholder="tk_… (leave blank for an unprotected topic)">
+          <p class="form-hint">Bearer token for a protected ntfy topic. Stored encrypted, never re-displayed.</p>
         </div>
 
         <div class="form-group">
