@@ -185,7 +185,8 @@ documented in the homelab connectivity project notes:
   aren't literally renamed as objects — this was done by granting
   access on the new name and revoking (`ntfy access --reset`) the old
   one for both `daybreak-bot` and `daybreak-readers`. Read access:
-  `daybreak-readers` shared token only.
+  `daybreak-readers` shared account only (real password, not a token —
+  see the on-boarding steps below for why).
 - **`daybreak-critical-public`** — unfiltered, every Critical/Patch Now
   article, no `terms` narrowing. Read access: anonymous
   (`ntfy access everyone daybreak-critical-public read-only`) —
@@ -210,10 +211,13 @@ integration uses it too), so this isn't a new exception.
   `Authorization` header for delivery. Never stored or logged in
   plaintext. Both webhook rows currently reuse the same encrypted
   token value.
-- `daybreak-readers`: read-only scoped ntfy user/token for the company
-  topic, shared across the whole team (one token, not per-person) —
-  the public topic needs no credential at all. See the team
-  on-boarding steps below.
+- `daybreak-readers`: read-only scoped ntfy account for the company
+  topic, shared across the whole team (one account, not per-person) —
+  the public topic needs no credential at all. Subscribing via the
+  mobile apps uses its real account **password**, not its API token
+  (the apps' Basic Auth flow only accepts real passwords — confirmed
+  via real-device testing after an initial wrong assumption otherwise).
+  See the team on-boarding steps below.
 - ntfy publishes are throttled to 1/5s in `WebhookService` (matches the
   server's `visitor-request-limit-replenish`) — see "Push notification
   formatting" below for why.
@@ -228,21 +232,29 @@ the `terms` list arrives):
 
 1. Add subscription → **Topic**: `daybreak-critical-COO`.
 2. "Use a different server" → `https://ntfy.omeruthi.online`.
-3. When prompted for credentials: **Username** `daybreak-readers`,
-   **Password** the `daybreak-readers` token (ntfy accepts an access
-   token in place of the real account password over Basic Auth — this
-   is documented ntfy behavior, not a workaround).
+3. In the app's **Settings → Users** section (not a per-subscription
+   prompt — the ntfy apps tie one login per *server*, applied to every
+   topic on it), add a user: **Username** `daybreak-readers`,
+   **Password** the real `daybreak-readers` account password (see
+   below — **not** its API token; confirmed via real-device testing
+   that the mobile apps' Basic Auth flow only accepts the actual
+   account password, not a token substituted as the password. An
+   earlier version of this doc claimed otherwise — wrong, fixed here).
 4. Subscribe.
 
 **Public topic** (`daybreak-critical-public`, unfiltered, no auth
 needed): same steps, but skip step 3 entirely — no credentials to
 enter.
 
-To revoke a team member's access, revoke and reissue the shared token
-(`sudo ntfy token remove daybreak-readers <token>` then `ntfy token add
-daybreak-readers` on the ntfy server) — since it's shared, this affects
-everyone and requires redistributing the new token, a known tradeoff of
-the shared-token model chosen over per-person tokens.
+To revoke a team member's access, change the shared account's password
+(`sudo ntfy user change-pass daybreak-readers` — needs the value piped
+twice, e.g. `printf '%s\n%s\n' "$NEWPASS" "$NEWPASS" | sudo ntfy user
+change-pass daybreak-readers`, since the prompt reads it twice for
+confirmation) and redistribute the new password to everyone who should
+still have access. Since it's shared, this affects everyone at once —
+a known tradeoff of the shared-credential model chosen over per-person
+accounts, and the reason the original ask was "initially one single
+token, later individual usernames/passwords."
 
 ## Current webhook configuration
 
@@ -251,7 +263,7 @@ Two `user_webhooks` rows, both `format='ntfy'`, both currently
 
 | id | Topic | Access | Purpose |
 |---|---|---|---|
-| 1 | `daybreak-critical-COO` | `daybreak-readers` shared read token | Company topic — will get the `terms` filter once the app/software list arrives |
+| 1 | `daybreak-critical-COO` | `daybreak-readers` shared account (password, not token) | Company topic — will get the `terms` filter once the app/software list arrives |
 | 2 | `daybreak-critical-public` | Anonymous/no-auth read (`ntfy access everyone daybreak-critical-public read-only`) | Public topic — stays unfiltered by design, every Critical/Patch Now article |
 
 Both are published to **only** by the `daybreak-bot` write-only token
