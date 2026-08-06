@@ -4,6 +4,7 @@
 [![MariaDB](https://img.shields.io/badge/MariaDB-10.11%2B-003545?logo=mariadb&logoColor=white)](https://mariadb.org/)
 [![Apache](https://img.shields.io/badge/Apache-2.4-D22128?logo=apache&logoColor=white)](https://httpd.apache.org/)
 [![Tests](https://img.shields.io/badge/tests-native%20suite-2ea44f)](tests/run.php)
+[![CI](https://github.com/omerdvd/daybreak/actions/workflows/tests.yml/badge.svg)](https://github.com/omerdvd/daybreak/actions/workflows/tests.yml)
 
 Daybreak is a self-hosted security news aggregator for fast daily monitoring.
 It combines curated security headlines, ransomware activity, and CVE updates in
