@@ -351,6 +351,67 @@ following presentation tweaks were added after real-world testing:
   `critical` category, `default` otherwise. Tag: 🚨 (`rotating_light`)
   vs 📰 (`newspaper`).
 
+## Daily digest integration
+
+`daybreak`'s backup + fetch-cron health status is pulled into the
+existing combined daily digest (`daily-digest.sh`, runs on the
+`minecraft` server as root via `daily-digest.timer`, 07:00 daily) — same
+pattern already used for pulling Proxmox's status, extended to a third
+host. Closes the "backup success visibility" gap noted in the ntfy
+feature doc (a failure-only alert says nothing if the timer itself
+silently stops running).
+
+**`/usr/local/bin/daybreak-status-report.sh`** on `daybreak`: reads
+`/var/lib/daybreak-backup-status` and
+`/var/lib/daybreak-fetch-health/last_alert` (absent = healthy, not an
+error), prints a `DAYBREAK_STATUS_BEGIN`/`DAYBREAK_STATUS_END`-delimited
+report — the exact same marker convention the Proxmox pull already uses,
+so `minecraft`'s extraction logic (`sed -n '/BEGIN/,/END/p'`) needed no
+new design, just a copy adapted to the new markers.
+
+### A real wrinkle: `daybreak`'s stacked TOTP blocks a headless pull
+
+Unlike Proxmox (plain key-only SSH for its digest-pull account), `daybreak`
+requires `AuthenticationMethods publickey,keyboard-interactive` for `omer`
+— and root is unreachable entirely (see "SSH access" above). A cron job
+on another server can't type a TOTP code, so the existing account model
+couldn't support this at all as configured.
+
+Resolved with a narrowly-scoped exemption, not by weakening the real
+account's MFA: a new **`digest` system user**, forced-command-only
+(`command="/usr/local/bin/daybreak-status-report.sh",no-port-forwarding,
+no-X11-forwarding,no-agent-forwarding,no-pty` in its `authorized_keys` —
+confirmed live that this actually blocks arbitrary commands, not just
+the happy path: `ssh ... digest@daybreak "whoami && cat /etc/shadow"`
+still only ever returns the status report), exempted from the stacked
+TOTP via an appended `Match User digest` block requiring `publickey`
+only. The forced-command key is treated as sufficiently scoped for this
+one narrow, non-interactive purpose — the same trust model already
+applied to the Proxmox digest-pull key elsewhere in this homelab, not a
+new or weaker standard invented for this box specifically.
+
+**Gotcha hit**: first attempt set the `digest` user's shell to
+`/usr/sbin/nologin`, which blocks *all* SSH sessions outright — including
+forced-command ones, not just interactive shell requests, since session
+setup itself checks the account's shell before the `command=` override
+ever gets a chance to matter. Fixed by using `/bin/bash` as the
+account's shell — the `authorized_keys` restriction still fully governs
+what actually executes regardless, so this doesn't weaken anything, it
+just satisfies session setup's own precondition.
+
+The counterpart key (`~/.ssh/daybreak-digest-key` on `minecraft`,
+`daily-digest.sh`'s new "Daybreak status" section) isn't tracked in this
+repo — same as every other cross-server monitor/digest script in this
+homelab, recorded here for where the decision lives, not the file itself.
+
+Verified live end-to-end: a real run of `daily-digest.service` produced
+a genuine combined digest push (Minecraft + Proxmox + `daybreak`, all
+three sections present and correctly formatted) to the real `digest`
+topic — not a synthetic test. Both the healthy path and the
+`UNREACHABLE` failure path (tested in isolation with a deliberately
+invalid key, without triggering a second real digest send) confirmed
+working.
+
 ## Tailscale mesh monitoring
 
 `daybreak` added to `tailscale-mesh-monitor.sh`'s `MONITORED_PEERS`
@@ -398,17 +459,11 @@ monitored peer).
   failure hit during setup (missing `LOCK TABLES` grant, fixed by
   switching to `--single-transaction`).
 
-Deliberately **not** wired into a daily digest (the other boxes fold
-backup status into `daily-digest.sh`, catching a silently-stopped timer
-even without an explicit failure) — tracked as a follow-up in
-[omerdvd/daybreak#2](https://github.com/omerdvd/daybreak/issues/2)
-rather than built now, since this is a single-purpose box and a
-digest integration is a bigger lift than felt justified at initial
-setup.
+Initially **not** wired into a daily digest — later added; see "Daily
+digest integration" below for the full record
+([omerdvd/daybreak#2](https://github.com/omerdvd/daybreak/issues/2)).
 
 ## Outstanding / not yet done
 
 - [ ] `terms` filter (specific app/software list) — pending from the
       user.
-- [ ] Backup success visibility (digest or equivalent) —
-      [omerdvd/daybreak#2](https://github.com/omerdvd/daybreak/issues/2).
