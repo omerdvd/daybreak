@@ -397,4 +397,39 @@ final class WebhookServiceTest extends TestCase
             $this->assertFalse(str_contains($h, "\n"));
         }
     }
+
+    // ── ntfy throttle ────────────────────────────────────────────────────────
+
+    /**
+     * Pins the pacing interval so a deliberate change is a visible diff, not
+     * silent drift — see the constant's own docblock for why 5.0s specifically
+     * (matches the self-hosted ntfy server's visitor-request-limit-replenish).
+     */
+    public function testNtfyThrottleIntervalMatchesServerReplenishRate(): void
+    {
+        $r = new \ReflectionClassConstant(WebhookService::class, 'NTFY_MIN_INTERVAL_S');
+        $this->assertSame(5.0, $r->getValue());
+    }
+
+    /**
+     * Fast path only: when enough time has already elapsed since the last
+     * publish, throttleNtfy() must not sleep at all. (The actual-sleep path
+     * is intentionally not exercised here — a real 5s sleep in every CI run
+     * forever isn't a trade worth making for that one assertion.)
+     */
+    public function testNtfyThrottleDoesNotSleepWhenIntervalAlreadyElapsed(): void
+    {
+        $prop = new \ReflectionProperty(WebhookService::class, 'lastNtfyPublishAt');
+        $prop->setAccessible(true);
+        $prop->setValue(null, microtime(true) - 10.0); // 10s ago, well past the 5s interval
+
+        $m = new \ReflectionMethod(WebhookService::class, 'throttleNtfy');
+        $m->setAccessible(true);
+
+        $start = microtime(true);
+        $m->invoke($this->service);
+        $elapsed = microtime(true) - $start;
+
+        $this->assertTrue($elapsed < 0.5, 'throttleNtfy() slept when it should not have');
+    }
 }

@@ -445,8 +445,35 @@ final class WebhookService
         );
     }
 
+    /**
+     * Minimum seconds between ntfy publishes from this process. Matches the
+     * self-hosted ntfy server's visitor-request-limit-replenish (1 token/5s) —
+     * pacing at exactly that rate means daybreak alone can never out-consume
+     * what's regenerating, leaving its 60-token burst allowance free for
+     * genuine simultaneous activity from other integrations sharing the same
+     * server (they're all seen as one "visitor" there, since ntfy sits behind
+     * Caddy without `behind-proxy` configured — a bigger, separate fix outside
+     * this app's scope). Learned the hard way: an initial backfill flooded
+     * ~150 notifications at once and hit this exact limit (HTTP 429).
+     */
+    private const NTFY_MIN_INTERVAL_S = 5.0;
+    private static ?float $lastNtfyPublishAt = null;
+
+    private function throttleNtfy(): void
+    {
+        if (self::$lastNtfyPublishAt !== null) {
+            $elapsed = microtime(true) - self::$lastNtfyPublishAt;
+            $remaining = self::NTFY_MIN_INTERVAL_S - $elapsed;
+            if ($remaining > 0) {
+                usleep((int) ($remaining * 1_000_000));
+            }
+        }
+        self::$lastNtfyPublishAt = microtime(true);
+    }
+
     private function attemptDeliveryRaw(string $url, string $body, array $headers): array
     {
+        $this->throttleNtfy();
         try {
             $res = $this->fetcher->post($url, $body, $headers);
             $ok  = $res['status'] >= 200 && $res['status'] < 300;
