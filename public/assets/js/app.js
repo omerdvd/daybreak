@@ -178,6 +178,32 @@ document.addEventListener('DOMContentLoaded', function () {
         r.addEventListener('change', function () { applyTheme(r.value); });
     });
 
+    // Dismissible notice boxes (site notification, watch term alerts) — dismiss
+    // is per-browser only (localStorage), no server round-trip. Each box carries
+    // a data-notice-id reflecting its current content, so if that content changes
+    // (admin edits the site message, or a new watch-term match appears) a
+    // previously dismissed box reappears automatically.
+    function setupDismissibleNotice(id) {
+        var notice = document.getElementById(id);
+        if (!notice) return;
+        var target = notice.closest('.notice-wrap') || notice;
+        var noticeId = notice.getAttribute('data-notice-id') || '';
+        var storageKey = 'daybreak-notice-dismissed-' + id;
+        if (noticeId !== '' && localStorage.getItem(storageKey) === noticeId) {
+            target.remove();
+            return;
+        }
+        var dismissBtn = notice.querySelector('[data-dismiss-notice]');
+        if (dismissBtn) {
+            dismissBtn.addEventListener('click', function () {
+                localStorage.setItem(storageKey, noticeId);
+                target.remove();
+            });
+        }
+    }
+    setupDismissibleNotice('site-notice');
+    setupDismissibleNotice('watch-alerts');
+
     // Star toggle — event delegation handles all .star-btn clicks.
     document.addEventListener('click', function (e) {
         var btn = e.target.closest('.star-btn');

@@ -130,6 +130,7 @@ $seoDescription = (string) ($seoDescription ?? 'Administrative pages for Daybrea
       <a href="/admin/suggestions" class="admin-nav-link<?= $_adminNav === 'suggestions' ? ' is-active' : '' ?>" <?= $_adminNav === 'suggestions' ? ' aria-current="page"' : '' ?>>Suggestions</a>
       <a href="/admin/users" class="admin-nav-link<?= $_adminNav === 'users'       ? ' is-active' : '' ?>" <?= $_adminNav === 'users' ? ' aria-current="page"' : '' ?>>Users</a>
       <a href="/admin/categories" class="admin-nav-link<?= $_adminNav === 'categories' ? ' is-active' : '' ?>" <?= $_adminNav === 'categories' ? ' aria-current="page"' : '' ?>>Categories</a>
+      <a href="/admin/notification" class="admin-nav-link<?= $_adminNav === 'notification' ? ' is-active' : '' ?>" <?= $_adminNav === 'notification' ? ' aria-current="page"' : '' ?>>Site Notification</a>
       <a href="/admin/audit" class="admin-nav-link<?= $_adminNav === 'audit'       ? ' is-active' : '' ?>" <?= $_adminNav === 'audit' ? ' aria-current="page"' : '' ?>>Audit Log</a>
     </div>
   </div>

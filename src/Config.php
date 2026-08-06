@@ -39,6 +39,20 @@ final class Config
     {
         return self::$values[$key] ?? getenv($key) ?: $default;
     }
+
+    /**
+     * APP_KEY as a required secret: throws if unset or still the documented
+     * placeholder, instead of letting callers silently fall back to a known
+     * default (which would defeat any hashing/encryption keyed on it).
+     */
+    public static function requireAppKey(): string
+    {
+        $key = (string) self::get('APP_KEY', '');
+        if ($key === '' || $key === 'change-me-32-byte-random') {
+            throw new RuntimeException('APP_KEY must be configured (see config/.env.example)');
+        }
+        return $key;
+    }
 }
 
 final class Database

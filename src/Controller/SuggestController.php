@@ -59,6 +59,12 @@ final class SuggestController
             exit;
         }
 
+        if ($feedUrl !== '' && (!filter_var($feedUrl, FILTER_VALIDATE_URL) || !preg_match('#^https?://#i', $feedUrl))) {
+            $_SESSION['flash_error'] = 'Feed URL must be a valid http/https URL.';
+            header('Location: /suggest');
+            exit;
+        }
+
         $probe   = null;
         $probeOn = $feedUrl !== '' ? $feedUrl : $homepage;
         try {

@@ -57,6 +57,7 @@ final class AuthService
     public static function requireAuth(): void
     {
         if (self::currentUser() === null) {
+            $_SESSION['flash_error'] = 'Please log in to continue.';
             header('Location: /login');
             exit;
         }
@@ -66,8 +67,8 @@ final class AuthService
     {
         $u = self::currentUser();
         if ($u === null || $u['role'] !== 'admin') {
-            http_response_code(403);
-            echo '<!doctype html><meta charset="utf-8"><title>Forbidden</title><h1>403 Forbidden</h1>';
+            $_SESSION['flash_error'] = 'You do not have permission to access that page.';
+            header('Location: /');
             exit;
         }
     }
@@ -355,6 +356,28 @@ final class AuthService
             'UPDATE users SET password_hash = ? WHERE id = ?',
             [Password::hash($new), $userId]
         );
+
+        // Revoke other sessions/remember-me tokens for this account so a
+        // voluntary password change actually locks out other devices —
+        // but keep the caller's own session and remember-me cookie (if any)
+        // alive, since they just re-proved the current password.
+        $currentSessionId = session_id() ?: null;
+        if ($currentSessionId !== null) {
+            Database::query('DELETE FROM sessions WHERE user_id = ? AND id != ?', [$userId, $currentSessionId]);
+        } else {
+            Database::query('DELETE FROM sessions WHERE user_id = ?', [$userId]);
+        }
+
+        $currentRememberRaw = $_COOKIE['daybreak_remember'] ?? null;
+        if (is_string($currentRememberRaw) && $currentRememberRaw !== '') {
+            Database::query(
+                'DELETE FROM remember_tokens WHERE user_id = ? AND token_hash != ?',
+                [$userId, hash('sha256', $currentRememberRaw)]
+            );
+        } else {
+            Database::query('DELETE FROM remember_tokens WHERE user_id = ?', [$userId]);
+        }
+
         return true;
     }
 
@@ -545,7 +568,7 @@ final class AuthService
 
     private static function hashIp(string $ip): string
     {
-        return hash('sha256', $ip . Config::get('APP_KEY', 'daybreak'));
+        return hash('sha256', $ip . Config::requireAppKey());
     }
 
     private static function issueRememberToken(int $userId): void

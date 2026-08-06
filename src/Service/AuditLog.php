@@ -15,7 +15,7 @@ final class AuditLog
         $user  = AuthService::currentUser();
         $uid   = $user ? (int) $user['id'] : null;
         $ip    = $_SERVER['REMOTE_ADDR'] ?? '';
-        $ipHash = hash('sha256', $ip . Config::get('APP_KEY', 'daybreak'));
+        $ipHash = hash('sha256', $ip . Config::requireAppKey());
 
         Database::query(
             'INSERT INTO audit_log (user_id, action, target_type, target_id, ip_hash)

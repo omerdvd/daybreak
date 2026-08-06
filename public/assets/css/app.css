@@ -317,6 +317,55 @@ h3 {
   color: #991b1b;
 }
 
+/* ── Site notification banner ──────────────────────────────────────────────── */
+.site-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-left: 3px solid #d97706;
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  color: #92400e;
+}
+
+.site-notice-text {
+  flex: 1;
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: pre-line;
+}
+
+[data-theme="dark"] .site-notice {
+  background: #2b1d05;
+  border-color: #92400e;
+  border-left-color: #d97706;
+  color: #fcd34d;
+}
+
+/* Generic dismiss "x" for closable notice boxes (site-notice, watch-alerts).
+   Uses currentColor/opacity rather than fixed colors so it fits whichever
+   box it's placed in without a per-box override. */
+.notice-dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.7;
+  padding: 0 0.125rem;
+}
+
+.notice-dismiss:hover,
+.notice-dismiss:focus-visible {
+  opacity: 1;
+}
+
 /* ── Content Grid ───────────────────────────────────────────────────────────── */
 main {
   display: block;
@@ -2806,13 +2855,21 @@ textarea:focus-visible {
   margin-bottom: 1.25rem;
 }
 
+.watch-alerts-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.625rem;
+}
+
 .watch-alerts-title {
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--color-accent);
-  margin: 0 0 0.625rem;
+  margin: 0;
 }
 
 .watch-alert-list {

@@ -6,6 +6,7 @@ use Daybreak\Security\Html;
 use Daybreak\Security\Csrf;
 use Daybreak\Service\AuthService;
 use Daybreak\Config;
+use Daybreak\Database;
 
 if (!function_exists('relativeTime')) {
   function relativeTime(?string $dateStr): string
@@ -78,6 +79,14 @@ $_filterAction = $_cat !== null
   ? Html::e($_catBase . $_cat)
   : Html::e($_base);
 $_currentUser = AuthService::currentUser();
+
+$_siteNotice = null;
+$_siteNoticeVersion = '';
+$_siteNoticeRow = Database::query('SELECT message, is_active, updated_at FROM site_notification WHERE id = 1')->fetch();
+if ($_siteNoticeRow && (int) $_siteNoticeRow['is_active'] === 1 && trim((string) $_siteNoticeRow['message']) !== '') {
+  $_siteNotice = (string) $_siteNoticeRow['message'];
+  $_siteNoticeVersion = (string) $_siteNoticeRow['updated_at'];
+}
 $_showWidgets = (bool) ($showWidgets ?? false);
 $_showFilterBar = (bool) ($showFilterBar ?? true);
 $_langQuery = $_lang !== '' ? '&lang=' . rawurlencode($_lang) : '';
@@ -271,6 +280,15 @@ $ogType = (string) ($ogType ?? 'website');
     <div class="flash-wrap" aria-live="polite" aria-atomic="true">
       <?php if ($_flash): ?><div class="flash flash-success" role="status"><?= Html::e($_flash) ?></div><?php endif; ?>
       <?php if ($_flashErr): ?><div class="flash flash-error" role="alert"><?= Html::e($_flashErr) ?></div><?php endif; ?>
+    </div>
+  <?php endif; ?>
+
+  <?php if ($_siteNotice !== null): ?>
+    <div class="flash-wrap notice-wrap">
+      <div class="site-notice" role="status" id="site-notice" data-notice-id="<?= Html::e($_siteNoticeVersion) ?>">
+        <p class="site-notice-text"><?= Html::e($_siteNotice) ?></p>
+        <button type="button" class="notice-dismiss" data-dismiss-notice aria-label="Dismiss notification">&times;</button>
+      </div>
     </div>
   <?php endif; ?>
 

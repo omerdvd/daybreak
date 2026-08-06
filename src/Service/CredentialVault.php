@@ -72,12 +72,7 @@ final class CredentialVault
 
     private static function key(): string
     {
-        $appKey = (string) Config::get('APP_KEY', '');
-        if ($appKey === '' || $appKey === 'change-me-32-byte-random') {
-            throw new RuntimeException('APP_KEY must be configured for credential vault');
-        }
-
         // Normalize arbitrary APP_KEY input to 32 bytes for AES-256.
-        return hash('sha256', $appKey, true);
+        return hash('sha256', Config::requireAppKey(), true);
     }
 }

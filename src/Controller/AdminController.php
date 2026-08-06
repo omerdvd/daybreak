@@ -1196,4 +1196,72 @@ final class AdminController
         }
         return $cat;
     }
+
+    // ── Site notification ────────────────────────────────────────────────────
+
+    public function notificationEdit(array $args = []): void
+    {
+        AuthService::requireAdmin();
+
+        $notification = Database::query('SELECT * FROM site_notification WHERE id = 1')->fetch();
+
+        $title    = 'Admin — Site notification';
+        $adminNav = 'notification';
+        include DB_ROOT . '/src/View/admin_layout.php';
+        include DB_ROOT . '/src/View/admin/notification/edit.php';
+        include DB_ROOT . '/src/View/admin_layout_end.php';
+    }
+
+    public function handleNotificationSave(array $args = []): void
+    {
+        AuthService::requireAdmin();
+        Csrf::check();
+
+        [$fields, $errors] = $this->validateNotificationInput($_POST);
+
+        if ($errors !== []) {
+            $notification = [
+                'message'   => $fields['message'],
+                'is_active' => $fields['is_active'] ? 1 : 0,
+            ];
+            $title      = 'Admin — Site notification';
+            $adminNav   = 'notification';
+            $formErrors = $errors;
+            include DB_ROOT . '/src/View/admin_layout.php';
+            include DB_ROOT . '/src/View/admin/notification/edit.php';
+            include DB_ROOT . '/src/View/admin_layout_end.php';
+            return;
+        }
+
+        $user = AuthService::currentUser();
+        Database::query(
+            'UPDATE site_notification SET message = ?, is_active = ?, updated_by = ? WHERE id = 1',
+            [$fields['message'], $fields['is_active'] ? 1 : 0, $user ? (int) $user['id'] : null]
+        );
+
+        AuditLog::write('site_notification.update', 'site_notification', '1');
+        $_SESSION['flash'] = $fields['is_active'] ? 'Site notification saved and activated.' : 'Site notification saved.';
+        header('Location: /admin/notification');
+        exit;
+    }
+
+    private function validateNotificationInput(array $post): array
+    {
+        $errors = [];
+
+        $message  = trim((string) ($post['message'] ?? ''));
+        $isActive = !empty($post['is_active']);
+
+        if (mb_strlen($message) > 500) {
+            $errors[] = 'Message must be 500 characters or fewer.';
+        }
+        if ($isActive && $message === '') {
+            $errors[] = 'A message is required to activate the notification.';
+        }
+
+        return [
+            ['message' => $message, 'is_active' => $isActive],
+            $errors,
+        ];
+    }
 }

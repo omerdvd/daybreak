@@ -130,6 +130,8 @@ $router->get('/admin/categories/create',        [AdminController::class, 'catego
 $router->post('/admin/categories/create',        [AdminController::class, 'handleCategoryCreate']);
 $router->get('/admin/categories/{id}',          [AdminController::class, 'categoryEdit']);
 $router->post('/admin/categories/{id}',          [AdminController::class, 'handleCategoryEdit']);
+$router->get('/admin/notification',             [AdminController::class, 'notificationEdit']);
+$router->post('/admin/notification',             [AdminController::class, 'handleNotificationSave']);
 
 // ── Legal / static pages ───────────────────────────────────────────────────────
 $router->get('/about',   [PageController::class, 'about']);

@@ -27,9 +27,14 @@ $paginationBase = $paginationBase ?? null;
 $alertArticles  = $alertArticles  ?? [];
 $watchTerms     = $watchTerms     ?? [];
 
-if ($alertArticles !== []): ?>
-  <div class="watch-alerts" role="region" aria-label="Watch term alerts">
-    <p class="watch-alerts-title">Watch term alerts</p>
+if ($alertArticles !== []):
+  $_watchNoticeId = md5(implode(',', array_map(static fn($wa) => (string) ($wa['id'] ?? ''), $alertArticles)));
+  ?>
+  <div class="watch-alerts" role="region" aria-label="Watch term alerts" id="watch-alerts" data-notice-id="<?= Html::e($_watchNoticeId) ?>">
+    <div class="watch-alerts-header">
+      <p class="watch-alerts-title">Watch term alerts</p>
+      <button type="button" class="notice-dismiss" data-dismiss-notice aria-label="Dismiss watch term alerts">&times;</button>
+    </div>
     <ul class="watch-alert-list">
       <?php foreach ($alertArticles as $wa): ?>
         <li class="watch-alert-item">

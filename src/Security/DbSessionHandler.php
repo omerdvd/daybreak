@@ -41,7 +41,7 @@ final class DbSessionHandler implements SessionHandlerInterface
     {
         $userId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
         $ipHash = isset($_SERVER['REMOTE_ADDR'])
-            ? hash('sha256', $_SERVER['REMOTE_ADDR'] . Config::get('APP_KEY', 'daybreak'))
+            ? hash('sha256', $_SERVER['REMOTE_ADDR'] . Config::requireAppKey())
             : null;
         $ua = mb_substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255);
 
