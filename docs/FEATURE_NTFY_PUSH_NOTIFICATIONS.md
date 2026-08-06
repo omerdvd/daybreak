@@ -1,134 +1,119 @@
-# Feature plan: ntfy push notifications for Critical/Patch Now alerts
+# Feature: ntfy push notifications for Critical/Patch Now alerts
 
-Status: **planned, not yet implemented**. This doc captures the design and
-deployment decisions made so far, to be picked up as an implementation task.
+Status: **implemented and deployed**. This doc now records the design as
+built; see [DEPLOYMENT_DAYBREAK_SERVER.md](DEPLOYMENT_DAYBREAK_SERVER.md)
+for the actual server it runs on and operational details (cron cadence,
+ntfy topic/token setup, team on-boarding, outstanding items).
 
 ## Goal
 
 Push notifications (via a self-hosted ntfy server) restricted to:
 
-1. A specific application / product (matched by name, e.g. "Fortinet",
-   "Citrix", "Exchange")
+1. A specific application / product (matched by name)
 2. The `Critical / Patch Now` source category only
 
-Delivered to a small group of team members' iPhones/Android devices via the
-ntfy app. No public website is required — this fork exists purely to power
-the push pipeline.
+Delivered to a small group of team members' iPhones/Android devices via
+the ntfy app. No public website — this fork exists purely to power the
+push pipeline; see the deployment doc for the full "why".
 
-## Why this is a natural fit for the existing webhook system
+## Design: reusing the existing webhook system
 
-Daybreak already has a generic outbound webhook system
+Daybreak already had a generic outbound webhook system
 (`user_webhooks` + `webhook_log`, dispatched from `AggregationService`
-via `WebhookService::dispatch()` after every source fetch — see
-`src/Service/WebhookService.php`). It already supports:
+via `WebhookService::dispatch()` after every source fetch). `ntfy` was
+added as a fifth payload format alongside `slack`/`discord`/`teams`/
+`generic`, reusing everything except payload shape and delivery
+mechanics:
 
-- Per-webhook `filter_json = {"terms":[...], "categories":[...], "sources":[...]}`,
-  ANDed together.
-- `categories` filters on `source_categories.slug` — `Critical / Patch Now`
-  is already seeded as `slug='critical'` in `migrations/001_initial_schema.sql`.
-- `terms` does a case-insensitive substring match against article
-  title + summary — this is how "specific application" filtering will work,
-  since articles have no structured product/tag field. A webhook with
-  `{"terms":["Fortinet","FortiOS"],"categories":["critical"]}` already
-  expresses "critical alerts about this app" with zero new matching logic.
-- Pluggable payload format per destination
-  (`slack` / `discord` / `teams` / `generic`), added incrementally
-  (see migration `021_webhook_teams_format.sql` for the template to follow
-  when adding `ntfy`).
-- Delivery, retry (`retryFailed()`), and logging (`webhook_log`) are all
-  format-agnostic already.
-- Every existing payload builder links to `$item->url` — the **original**
-  source article URL from the RSS/API adapter, never a Daybreak-hosted
-  page. This is required (links must stay pointing at upstream sources)
-  and is already true by construction — nothing to change here.
+- **Filter matching is unchanged.** `filter_json = {"terms":[...],
+  "categories":[...], "sources":[...]}` already expressed exactly what
+  was needed — `{"terms":["Fortinet","FortiOS"],"categories":
+  ["critical"]}` filters to "critical alerts about this app" with zero
+  new matching logic. `Critical / Patch Now` is `source_categories.slug
+  = 'critical'`, seeded since the initial schema.
+- **Delivery, retry, and logging are unchanged.** `deliverRaw()`/
+  `attemptDeliveryRaw()` mirror the existing `deliver()`/
+  `attemptDelivery()` pair; `retryFailed()` grew an `ntfy` branch using
+  the same 24h/attempt=1 retry window as every other format.
+- **Article links are unchanged** — every payload builder, `ntfy`
+  included, links to `$item->url` (the original source article), never
+  a Daybreak-hosted page.
 
-## What's actually new
+### What's actually new
 
-1. **Migration**: add `'ntfy'` to `user_webhooks.format` ENUM
-   (same shape as migration 021's `teams` addition).
-2. **Non-JSON delivery path**: ntfy's publish API takes a raw text body
-   plus headers (`Title`, `Priority`, `Tags`, `Click`, `Actions`) —
-   not a JSON payload like the other four formats. `FetchClient::postJson()`
-   needs a sibling method (or a headers-capable variant) for this.
-3. **Auth for a private server**: the target ntfy server requires a
-   Bearer token for protected topics. Options considered:
-   - Embed the token in the publish URL (matches how Slack/Discord/Teams
-     webhook secrets already live in `user_webhooks.url` — consistent,
-     but plaintext-in-DB, same trust level as the other three formats).
-   - Store it via the existing `CredentialVault` service (already used
-     elsewhere, e.g. the Kioju API key) — better hygiene, since this
-     token gates a personal push channel and the instance is otherwise
-     unexposed.
-   - **Decision: not yet finalized** — leaning towards `CredentialVault`
-     given this instance won't be public-facing anyway, but open until
-     implementation starts.
-4. **Priority mapping**: `Critical / Patch Now` articles should map to
-   ntfy `Priority: urgent` (5, phone-alert-worthy); everything else to
-   default priority. Purely a payload-builder concern, not a filter
-   change.
-5. **UI**: add `ntfy` to `WebhookController::ALLOWED_FORMATS`, extend the
-   webhooks settings view. The `terms` + `categories` filter builder
-   already exists in that UI for the other formats — this is mostly reuse.
+1. **Migration `022_webhook_ntfy_format.sql`**: adds `'ntfy'` to
+   `user_webhooks.format`, plus a nullable `secret_enc` column.
+2. **Non-JSON delivery path**: ntfy's publish API takes a raw text
+   body plus headers (`Title`, `Priority`, `Tags`, `Click`), not a JSON
+   envelope. `FetchClient` grew a `post(string $url, string $body,
+   array $headers)` method (implemented in `FeedFetcher` and
+   `FakeFetchClient`) alongside the existing `postJson()`, which stays
+   as-is for the other four formats.
+3. **Token storage: `CredentialVault`**, not URL-embedded. Decided in
+   favor of encryption (AES-256-GCM, keyed off `APP_KEY`, the same
+   service already used for the Kioju API key) over the simpler
+   URL-embedded approach the other three formats use, since this token
+   gates a personal push channel on an otherwise-unexposed instance —
+   worth the slightly higher bar.
+   `WebhookController::buildSecretEnc()` handles encrypt-on-set,
+   preserve-on-blank-resubmit (the edit form never re-displays the
+   token), and clear-on-format-switch.
+4. **Priority mapping**: `urgent` (🚨 `rotating_light` tag) for the
+   `critical` category, `default` (📰 `newspaper` tag) otherwise.
+5. **UI**: `ntfy` in `WebhookController::ALLOWED_FORMATS` and the
+   settings view — a token field (type=password, optional) alongside
+   the existing terms/categories/sources filter builder, which needed
+   no changes since it already supported everything required.
 
-## Deployment model (decided)
+## Push notification formatting
 
-This fork will **not** be published as a public website. Rationale:
+Beyond the base payload, three refinements were added after real-device
+testing surfaced them:
 
-- The push pipeline (`bin/fetch.php`, cron-driven) is fully decoupled from
-  the web frontend (`public/index.php`) — cron does fetch → dedup →
-  webhook dispatch with no HTTP listener involved at all.
-- Article links in notifications already point at the original source,
-  not at any Daybreak-hosted page (see above) — so there's no user-facing
-  reason to expose a website.
-- Team members only need the ntfy app + topic subscription (optionally
-  with a read token) — they never touch Daybreak itself.
-- The only Daybreak "user" needed is the owning account for the
-  `user_webhooks` row (an FK requirement, not a UX requirement).
+- **CRLF header injection guard**: `Title`/`Click` header values are
+  sanitized (`sanitizeHeaderValue()`) since they ultimately originate
+  from external, untrusted RSS/API feeds — stripped `\r`/`\n` before
+  ever reaching an HTTP header.
+- **Category-tag stripping**: some sources (Exploit-DB-style feeds)
+  prefix titles with `[webapps]`/`[local]`/`[remote]`/etc.
+  `stripCategoryTag()` removes any leading `[tag]` via a generic regex
+  (not an enumerated list, so it also covers tags not seen yet) —
+  cosmetic, notification-only; the stored article title and website
+  display are untouched.
+- **CVSS score extraction**: not a structured field on `articles`, but
+  `NvdAdapter` and `GitHubAdvisoryAdapter` already embed it as text in
+  the summary (`"CRITICAL (9.8) — ..."`, `"CVSS 9.8 · ..."`).
+  `extractCvssLine()` pulls it into its own 🎯 line via regex when
+  present; sources without CVSS data (CISA KEV, plain RSS) simply get
+  no line, silently — "if possible," not a hard requirement.
+- **Visible article link**: the URL is also appended as plain body
+  text, not just the `Click` header (which opens it on tap) — a
+  visible fallback for contexts where `Click` doesn't fire, and
+  restructured so it (and the CVSS line) always survive truncation of
+  the long-form description rather than only fitting if there's room.
 
-**Hosting**: a fresh Linode Nanode, Newark NJ region (closest to NY,
-matching the existing Minecraft/Linode server's region), joined to the
-existing Tailscale tailnet. The web UI (optional, admin-only convenience
-for editing filters without SQL) stays **Tailscale-only**, never publicly
-exposed — no public vhost, no ports 80/443 open on the Linode Cloud
-Firewall. TLS is still provided via `tailscale cert` for the MagicDNS
-hostname (same pattern as the existing self-hosted ntfy server), since
-the app's CSP (`upgrade-insecure-requests`) and HSTS/cookie handling
-assume HTTPS even over a private network.
+## Deployment model (as built)
 
-Push delivery itself goes through the existing self-hosted ntfy server
-(`ntfy.omeruthi.online`, Linode London 2) via internal Tailscale
-publishing, using a new dedicated topic and a scoped write-only bot
-token (matching the existing `aide-bot` / `mesh-monitor-bot` pattern),
-not an admin-scoped token.
+Confirmed as planned: this fork is **not** a public website. Full
+provisioning record — hosting choice, network/firewall layers, SSH/MFA
+setup, LAMP stack, TLS, cron, ntfy topic/token setup, team on-boarding
+steps — lives in
+[DEPLOYMENT_DAYBREAK_SERVER.md](DEPLOYMENT_DAYBREAK_SERVER.md).
 
-### Provisioning checklist for the new box
+## Resolved decisions (were open, now settled)
 
-- Sudo user `omer`, timezone `Asia/Jerusalem`, Ubuntu 24.04 LTS.
-- SSH key-only via 1Password (public key + Touch ID autologin); MFA model
-  (1Password-only vs. stacked TOTP like the ntfy server) still open.
-- Tailscale join, own identity, key expiry disabled.
-- Dual-layer firewall: Linode Cloud Firewall + UFW, IPv4 **and** IPv6,
-  default-deny inbound except SSH over Tailscale.
-- fail2ban on `sshd`, ban notifications wired to ntfy.
-- PHP 8.3 / MariaDB 10.11+ / Apache 2.4 stack (per README), MariaDB bound
-  to localhost, least-privilege `daybreak_app` DB user, `config/.env`
-  above the Apache docroot per the repo's own convention.
-- `tailscale cert` for the MagicDNS hostname, weekly renewal cron.
-- Cron: `bin/fetch.php` every 5 min, maintenance cron daily (per README).
-- A health check watching that the fetch cron is actually succeeding
-  (self-healing restart + alert), since a silent failure here defeats
-  the point of a critical-alerting pipeline.
-- SSH-login-notify via PAM, same as the other three homelab boxes.
-- Daily encrypted DB + config backup (GPG + rclone to Google Drive),
-  matching the existing `mc-backup.sh` / `ntfy-backup.sh` pattern.
-- Lynis hardening pass, tracked over time (AIDE explicitly skipped for
-  this box for now).
-- Add the new node to the existing `tailscale-mesh-monitor.sh` peer list.
+- [x] ntfy token storage → `CredentialVault`.
+- [x] SSH MFA model → stacked TOTP (`pam_google_authenticator` +
+      publickey), not 1Password-only — matches the ntfy/Minecraft
+      boxes' server-side-second-factor bar.
+- [x] Topic name → `daybreak-critical`.
+- [x] Topic read-access model → one shared read-only token
+      (`daybreak-readers`) for the whole team, not per-teammate tokens.
 
-## Open decisions before implementation starts
+## Still open
 
-- [ ] `ntfy` token storage: `CredentialVault` vs. URL-embedded.
-- [ ] SSH MFA model on the new box: 1Password-only vs. stacked
-      `pam_google_authenticator`.
-- [ ] Final ntfy topic name.
-- [ ] Whether the topic is public-read or per-teammate read tokens.
+- [ ] `terms` filter (the specific app/software list) — pending from
+      the user; currently the one live webhook filters on
+      `categories: ["critical"]` only, with no `terms` narrowing yet.
+- [ ] Encrypted backups, mesh-monitor addition, a fetch-cron health
+      check — see the deployment doc's outstanding-items list.
