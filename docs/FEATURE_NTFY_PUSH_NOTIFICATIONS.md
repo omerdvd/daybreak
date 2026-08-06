@@ -110,10 +110,11 @@ steps — lives in
 - [x] Topic read-access model → one shared read-only token
       (`daybreak-readers`) for the whole team, not per-teammate tokens.
 
-## Still open
+## Status: complete
 
-- [ ] `terms` filter (the specific app/software list) — pending from
-      the user; currently the one live webhook filters on
-      `categories: ["critical"]` only, with no `terms` narrowing yet.
-- [ ] Encrypted backups, mesh-monitor addition, a fetch-cron health
-      check — see the deployment doc's outstanding-items list.
+Everything in the original checklist is done, including the `terms`
+filter (the last open item) — see [Issue #1](https://github.com/omerdvd/daybreak/issues/1)
+for the full checklist and the closing comment for how the term list
+was built. The list itself isn't committed here: it's derived from a
+private internal asset inventory and lives only in the webhook's
+`filter_json` server-side, not in this repo.
