@@ -304,6 +304,44 @@ final class WebhookServiceTest extends TestCase
         $this->assertTrue(in_array('Authorization: Bearer tk_test_token_123', $payload['headers'], true));
     }
 
+    public function testNtfyPayloadStripsLeadingCategoryTagFromTitleAndBody(): void
+    {
+        $item = new NormalizedItem(
+            guid:    'g-tag',
+            title:   '[webapps] Langflow 1.9.0 - RCE',
+            url:     'https://example.test/a',
+            summary: null,
+        );
+        $payload = $this->callNtfyPayload($item, '', false);
+
+        $this->assertTrue(in_array('Title: Langflow 1.9.0 - RCE', $payload['headers'], true));
+        $this->assertStringContains('Langflow 1.9.0 - RCE', $payload['body']);
+        $this->assertFalse(str_contains($payload['body'], '[webapps]'));
+    }
+
+    public function testNtfyPayloadStripsLocalAndRemoteTagsToo(): void
+    {
+        $local = $this->callNtfyPayload(new NormalizedItem(
+            guid: 'g-l', title: '[local] ProtonVPN v4.4.1 - Unquoted Service Path',
+            url: 'https://example.test/a', summary: null,
+        ), '', false);
+        $this->assertTrue(in_array('Title: ProtonVPN v4.4.1 - Unquoted Service Path', $local['headers'], true));
+
+        $remote = $this->callNtfyPayload(new NormalizedItem(
+            guid: 'g-r', title: '[remote] Hydra - Stack Buffer Overflow',
+            url: 'https://example.test/a', summary: null,
+        ), '', false);
+        $this->assertTrue(in_array('Title: Hydra - Stack Buffer Overflow', $remote['headers'], true));
+    }
+
+    public function testNtfyPayloadDoesNotAlterTitleWithoutCategoryTag(): void
+    {
+        $item = $this->item('CRITICAL: RCE in widely used library');
+        $payload = $this->callNtfyPayload($item, '', false);
+
+        $this->assertTrue(in_array('Title: CRITICAL: RCE in widely used library', $payload['headers'], true));
+    }
+
     public function testNtfyPayloadSanitizesCrlfInjectionFromTitleAndUrl(): void
     {
         $item = new NormalizedItem(

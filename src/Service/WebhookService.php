@@ -318,9 +318,10 @@ final class WebhookService
      */
     private function ntfyPayload(NormalizedItem $item, string $sourceName, bool $urgent, ?string $secretEnc): array
     {
-        $title   = $this->sanitizeHeaderValue(mb_substr($item->title, 0, 150));
-        $summary = $item->summary !== null ? trim($item->summary) : '';
-        $body    = $summary !== '' ? mb_substr($summary, 0, 1000) : $item->title;
+        $cleanTitle = $this->stripCategoryTag($item->title);
+        $title      = $this->sanitizeHeaderValue(mb_substr($cleanTitle, 0, 150));
+        $summary    = $item->summary !== null ? trim($item->summary) : '';
+        $body       = $summary !== '' ? mb_substr($summary, 0, 1000) : $cleanTitle;
         if ($sourceName !== '') {
             $body .= "\n\n— " . $sourceName;
         }
@@ -342,6 +343,17 @@ final class WebhookService
     private function sanitizeHeaderValue(string $value): string
     {
         return trim(str_replace(["\r", "\n"], ' ', $value));
+    }
+
+    /**
+     * Strips a leading bracketed category tag (e.g. "[webapps] ", "[local] ",
+     * "[remote] " — the Exploit-DB-style source's convention) from a title,
+     * for push-notification display only. The stored article title/website
+     * are unaffected — only the ntfy payload uses this.
+     */
+    private function stripCategoryTag(string $title): string
+    {
+        return (string) preg_replace('/^\[[a-z0-9 _-]+\]\s*/i', '', $title, 1);
     }
 
     /** Attempt one delivery and log the result to webhook_log. */
