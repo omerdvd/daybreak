@@ -21,6 +21,12 @@ jobs:
           coverage: none
 
       - name: Run native test suite
+        env:
+          # No config/.env in CI (never committed, by design). CredentialVault
+          # needs *some* APP_KEY to derive its AES key from — this is a
+          # fixed, non-secret, CI-only value (Config::get() already falls
+          # back to getenv() when .env is absent), not a real production key.
+          APP_KEY: ci-test-only-app-key-not-a-real-secret
         run: php tests/run.php
 
   php-lint:
