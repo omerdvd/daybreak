@@ -172,6 +172,34 @@ wave of stale-CVE notifications. If redeploying from scratch: consider
 running the very first `bin/fetch.php` with `WEBHOOK` dispatch
 disabled, or accept the one-time flood.
 
+### Fetch-cron health check
+
+The whole point of this deployment is reliable delivery — a silently
+broken fetch cron would defeat it with zero signal, the same failure
+shape that's already bitten this homelab before (`pvescheduler`
+stopping silently for ~5 days on Proxmox, fail2ban disabled for 6 days
+on Minecraft). Closed with `/usr/local/bin/daybreak-fetch-health.sh`,
+run via `daybreak-fetch-health.timer` (systemd oneshot, every 10 min,
+matching the standing "timer, not cron" convention for new
+automation):
+
+- **Self-heals**: kills any `fetch.php` process that's been running
+  longer than 15 minutes (abnormal for a 30-min cadence job — almost
+  certainly hung and holding `GET_LOCK`, which would otherwise block
+  every subsequent cron tick indefinitely) before checking anything
+  else.
+- **Alerts** (to the existing `communication` topic — `daybreak-bot`
+  granted write access there too, alongside its other topics) if
+  `fetch_log` has no activity in the last 50 minutes (one missed
+  30-min tick + buffer) or has no entries at all.
+- **Rate-limited to one alert per hour** while unhealthy
+  (`/var/lib/daybreak-fetch-health/last_alert`) — avoids spamming a
+  push every 10 minutes for the same ongoing outage.
+- Verified live: forced a stale-state test run (real push received,
+  confirmed the alert path — not just the happy path — actually
+  works) and confirmed the cooldown suppresses a second alert fired
+  immediately after.
+
 ## ntfy integration
 
 Two topics on the existing self-hosted ntfy server
@@ -367,8 +395,5 @@ setup.
 - [ ] `terms` filter (specific app/software list) — pending from the
       user.
 - [ ] Add `daybreak` to `tailscale-mesh-monitor.sh`'s peer list.
-- [ ] A health check confirming the fetch cron is actually succeeding
-      (self-healing restart + alert on failure) — flagged during
-      planning as the highest-priority reliability gap, not yet built.
 - [ ] Backup success visibility (digest or equivalent) —
       [omerdvd/daybreak#2](https://github.com/omerdvd/daybreak/issues/2).
