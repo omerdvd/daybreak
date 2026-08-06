@@ -174,40 +174,69 @@ disabled, or accept the one-time flood.
 
 ## ntfy integration
 
-- Topic: **`daybreak-critical`** on the existing self-hosted ntfy
-  server (`ntfy.omeruthi.online`) — **not** a new ntfy server, reusing
-  the one documented in the homelab connectivity project notes.
-- Publish URL used in the webhook config:
-  `https://ntfy.omeruthi.online/daybreak-critical` — the **public**
-  domain, not the Tailscale one. This was a deliberate, non-obvious
-  choice: Daybreak's own `SsrfGuard` explicitly denies the Tailscale
-  CGNAT range (`100.64.0.0/10`), so `ntfy.tail05f000.ts.net` would be
-  blocked outright by the app's own outbound-fetch protection. The
-  public domain is already the established pattern elsewhere (Home
-  Assistant's `rest_command` integration uses it too), so this isn't a
-  new exception.
-- `daybreak-bot`: write-only scoped ntfy user/token for publishing
-  (`ntfy access daybreak-bot daybreak-critical write-only`). The token
-  is stored **encrypted** in `user_webhooks.secret_enc` via
-  `CredentialVault` (AES-256-GCM, keyed off `APP_KEY`) — decrypted
-  in-process only when building the `Authorization` header for
-  delivery. Never stored or logged in plaintext.
-- `daybreak-readers`: read-only scoped ntfy user/token, shared across
-  the whole team (one token, not per-person) for ntfy app
-  subscriptions. See the team on-boarding steps below.
+Two topics on the existing self-hosted ntfy server
+(`ntfy.omeruthi.online`) — **not** a new ntfy server, reusing the one
+documented in the homelab connectivity project notes:
+
+- **`daybreak-critical-COO`** — the company topic. Originally named
+  `daybreak-critical`, renamed once the public topic was added and this
+  one's role narrowed to "company apps only" (see
+  [#5](https://github.com/omerdvd/daybreak/issues/5)). ntfy topics
+  aren't literally renamed as objects — this was done by granting
+  access on the new name and revoking (`ntfy access --reset`) the old
+  one for both `daybreak-bot` and `daybreak-readers`. Read access:
+  `daybreak-readers` shared token only.
+- **`daybreak-critical-public`** — unfiltered, every Critical/Patch Now
+  article, no `terms` narrowing. Read access: anonymous
+  (`ntfy access everyone daybreak-critical-public read-only`) —
+  **reading** only; publishing stays locked to `daybreak-bot` on both
+  topics, same as always. Open anonymous *write* would let anyone spoof
+  fake "critical" alerts into it.
+
+Publish URLs used in both webhook configs use the **public** domain
+(`https://ntfy.omeruthi.online/...`), not the Tailscale one. This was a
+deliberate, non-obvious choice: Daybreak's own `SsrfGuard` explicitly
+denies the Tailscale CGNAT range (`100.64.0.0/10`), so
+`ntfy.tail05f000.ts.net` would be blocked outright by the app's own
+outbound-fetch protection. The public domain is already the
+established pattern elsewhere (Home Assistant's `rest_command`
+integration uses it too), so this isn't a new exception.
+
+- `daybreak-bot`: write-only scoped ntfy user/token, granted write
+  access to both topics (plus `backups`, for the encrypted-backup
+  failure alert). The token is stored **encrypted** in
+  `user_webhooks.secret_enc` via `CredentialVault` (AES-256-GCM, keyed
+  off `APP_KEY`) — decrypted in-process only when building the
+  `Authorization` header for delivery. Never stored or logged in
+  plaintext. Both webhook rows currently reuse the same encrypted
+  token value.
+- `daybreak-readers`: read-only scoped ntfy user/token for the company
+  topic, shared across the whole team (one token, not per-person) —
+  the public topic needs no credential at all. See the team
+  on-boarding steps below.
+- ntfy publishes are throttled to 1/5s in `WebhookService` (matches the
+  server's `visitor-request-limit-replenish`) — see "Push notification
+  formatting" below for why.
 - Both accounts' account passwords (as opposed to their tokens) were
   set to throwaway random values at creation — they authenticate via
   token only and the passwords are never used or distributed.
 
 ### Team subscription steps (ntfy app, iOS/Android)
 
-1. Add subscription → **Topic**: `daybreak-critical`.
+**Company topic** (`daybreak-critical-COO`, app/software-filtered once
+the `terms` list arrives):
+
+1. Add subscription → **Topic**: `daybreak-critical-COO`.
 2. "Use a different server" → `https://ntfy.omeruthi.online`.
 3. When prompted for credentials: **Username** `daybreak-readers`,
    **Password** the `daybreak-readers` token (ntfy accepts an access
    token in place of the real account password over Basic Auth — this
    is documented ntfy behavior, not a workaround).
 4. Subscribe.
+
+**Public topic** (`daybreak-critical-public`, unfiltered, no auth
+needed): same steps, but skip step 3 entirely — no credentials to
+enter.
 
 To revoke a team member's access, revoke and reissue the shared token
 (`sudo ntfy token remove daybreak-readers <token>` then `ntfy token add
@@ -222,7 +251,7 @@ Two `user_webhooks` rows, both `format='ntfy'`, both currently
 
 | id | Topic | Access | Purpose |
 |---|---|---|---|
-| 1 | `daybreak-critical` | `daybreak-readers` shared read token | Company topic — will get the `terms` filter once the app/software list arrives |
+| 1 | `daybreak-critical-COO` | `daybreak-readers` shared read token | Company topic — will get the `terms` filter once the app/software list arrives |
 | 2 | `daybreak-critical-public` | Anonymous/no-auth read (`ntfy access everyone daybreak-critical-public read-only`) | Public topic — stays unfiltered by design, every Critical/Patch Now article |
 
 Both are published to **only** by the `daybreak-bot` write-only token
@@ -309,7 +338,7 @@ following presentation tweaks were added after real-world testing:
   (`STATUS|timestamp|size|duration`, same shape as the other boxes).
 - **Failure-only** ntfy alert, to the existing `backups` topic (the
   `daybreak-bot` token was granted write access there too, alongside
-  its `daybreak-critical` scope) — verified working via a real
+  its `daybreak-critical-COO` scope) — verified working via a real
   failure hit during setup (missing `LOCK TABLES` grant, fixed by
   switching to `--single-transaction`).
 
