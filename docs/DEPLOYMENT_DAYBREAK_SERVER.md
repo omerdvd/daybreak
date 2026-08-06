@@ -128,7 +128,16 @@ non-interactive commands over the multiplexed SSH connection can use
 - `config/.env`: `APP_BASE_URL=https://daybreak.tail05f000.ts.net`,
   DB credentials, a generated `APP_KEY` (also the key
   `CredentialVault` derives its AES-256-GCM key from — see the ntfy
-  feature doc). `chmod 640 omer:www-data`.
+  feature doc). `chmod 640 omer:www-data`. Also holds `NVD_API_KEY`
+  (registered free at nvd.nist.gov — configuring this surfaced a real
+  bug, fixed in `NvdAdapter`: NVD's WAF rejects a valid key passed as
+  `?apiKey=...` with a 404, but accepts it fine as an `apiKey:` header
+  — see that commit's message for the full investigation) and
+  `GITHUB_TOKEN` (a zero-scope classic PAT, bumping the GitHub Advisory
+  adapter's rate limit from 60 to 5000 req/hr — verified both directly
+  via `/rate_limit` and that `GitHubAdvisoryAdapter` actually sends it
+  as an `Authorization: Bearer` header, not just that a single fetch
+  happened to succeed either way).
 - Apache bound **only** to the Tailscale interface IP
   (`Listen 100.71.128.39:80`/`443` in `ports.conf`, default site
   disabled) — belt-and-suspenders on top of the Cloud Firewall; even a
