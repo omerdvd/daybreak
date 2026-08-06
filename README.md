@@ -1,5 +1,10 @@
 # Daybreak
 
+> This is a fork of [SilverDay/daybreak](https://github.com/SilverDay/daybreak). Many thanks
+> to SilverDay for the time and effort put into building the original project, and to the
+> Claude agent that assisted in developing it — this fork wouldn't exist without that
+> foundation to build on.
+
 [![PHP](https://img.shields.io/badge/PHP-8.3-777BB4?logo=php&logoColor=white)](https://www.php.net/)
 [![MariaDB](https://img.shields.io/badge/MariaDB-10.11%2B-003545?logo=mariadb&logoColor=white)](https://mariadb.org/)
 [![Apache](https://img.shields.io/badge/Apache-2.4-D22128?logo=apache&logoColor=white)](https://httpd.apache.org/)

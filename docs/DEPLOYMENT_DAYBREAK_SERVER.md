@@ -107,6 +107,67 @@ non-interactive commands over the multiplexed SSH connection can use
   `communication`. First real run (used to establish the baseline
   instead of waiting a month for the first data point) confirmed the
   67 score above.
+
+  **Remediation pass (67 → 76)**: triaged every open Lynis finding into
+  fast-fix / safe-to-skip-permanently / needs-a-judgment-call, presented
+  the list before touching anything, and got explicit sign-off on the
+  one consequential action (Postfix) and two borderline calls
+  (mod_evasive, pam_cracklib) before proceeding.
+  - **Fast fixes** (no tradeoff, just applied): tightened permissions on
+    `/etc/cron.d`, `/etc/grub.d` contents, and `/etc/ssh/sshd_config`
+    (world-readable → owner/root only); added the missing sysctl entries
+    Lynis flagged; set a restrictive `umask` and password-aging defaults
+    in `/etc/login.defs`; installed `libpam-tmpdir` (per-user private
+    `/tmp`); added explicit `blacklist` directives (vs. relying on
+    implicit denial) for the same rare protocols already covered above;
+    ran a full `apt-get upgrade` (verified Apache/MariaDB stayed up and
+    the webgui still returned 200 afterward — not just trusted the exit
+    code).
+  - **Postfix purged entirely** (`apt-get purge postfix`, confirmed port
+    25 no longer listens): this server was never going to send mail from
+    itself (ntfy push covers all alerting), so an unused local MTA was
+    pure attack surface with no offsetting value. Explicit user sign-off
+    obtained first since removing a package is harder to casually undo
+    than a config tweak.
+  - **`mod_evasive` and `pam_cracklib`: skipped, by explicit user
+    decision.** Both would need real tuning effort (mod_evasive's
+    request-rate thresholds against actual traffic patterns;
+    pam_cracklib's policy against this box's single-admin,
+    key+TOTP-gated login model where a weak *password* isn't the
+    realistic attack path) that isn't worth it here. Recorded as
+    `skip-test=AUTH-9262` (pam_cracklib) alongside the pre-existing
+    `AUTH-9286` skip (password aging, a separate finding covered above),
+    plus `NETW-3200`, `LOGG-2190`, and `FINT-4402` — each individually
+    investigated and judged not worth retrofitting on this box, same bar
+    as the original skip list.
+  - **`KRNL-6000` (sysctl values differing from the Lynis scan profile)**:
+    initially skipped three known differing sub-keys
+    (`kernel.modules_disabled`, `kernel.perf_event_paranoid`,
+    `kernel.sysrq` — same "not worth retrofitting" reasoning as the rest
+    of the list) via `skip-test=KRNL-6000:<sysctl-key>`, but the
+    parent-level suggestion kept appearing after those — turned out a
+    fourth key, `net.ipv4.conf.all.rp_filter`, was still genuinely
+    differing (expected strict `1`, actual loose `2`) and hadn't been
+    caught in the first pass. Verified this one is *intentional*, not an
+    oversight: this box is multi-homed (`eth0` public NIC + `tailscale0`)
+    and `/etc/sysctl.d/10-network-security.conf` deliberately sets loose
+    mode, because strict reverse-path filtering can silently drop
+    legitimate asymmetric-routed Tailscale traffic — loose mode still
+    rejects packets with no route at all, so the protection that matters
+    is retained. Added `skip-test=KRNL-6000:net.ipv4.conf.all.rp_filter`
+    with that reasoning; the parent suggestion cleared once all four
+    actual differences were accounted for.
+  - **Left open, on purpose:**
+    - `PKGS-7392` (vulnerable/outdated packages) — deferred to the
+      already-scheduled `unattended-upgrades` auto-reboot window
+      (`03:30`), not forced manually; expected to self-resolve.
+    - The generic `LYNIS` "release is more than 4 months old" suggestion
+      — cosmetic (checks Lynis's own version freshness, not anything
+      about this box), `skip-test=LYNIS` doesn't suppress it (Lynis
+      appears to always surface this one regardless), not worth further
+      engineering effort to hide.
+  - Final score: **76/100**, confirmed via a live re-run of
+    `daybreak-lynis-ntfy.sh`, not just inferred from the diff.
 - **rkhunter: decided against, permanently, not just deferred.**
   Revisited later and made a final call rather than leaving it
   perpetually "undecided" like the ntfy box: the marginal value doesn't
